@@ -48,6 +48,9 @@ const resolutionOptionList = {
 };
 
 let recordingState = false;
+let recordingStartTime = 0;
+let recordingEndTime = 0;
+let recordedTime = 0;
 
 function Recorder(stream, options, callback) {
 	this.mediaRecoder = new MediaRecorder(stream, options);
@@ -69,7 +72,9 @@ function Recorder(stream, options, callback) {
 }
 
 async function toLibx264(blob) {
-	const ffmpeg = createFFmpeg({ log: true });
+	const ffmpeg = createFFmpeg({
+		logger: (message) => updateProgressBar(30, recordedTime, message),
+	});
 	await ffmpeg.load();
 	const buffer = await blob.arrayBuffer();
 	ffmpeg.FS(
@@ -92,31 +97,27 @@ async function toLibx264(blob) {
 	return new Blob([output.buffer], { type: 'video/mp4' });
 }
 
-const fadeOut = (element) => {
-	var op = 1; // initial opacity
-	var timer = setInterval(function () {
-		if (op <= 0.1) {
-			clearInterval(timer);
-			element.style.display = 'none';
-		}
-		element.style.opacity = op;
-		element.style.filter = 'alpha(opacity=' + op * 100 + ')';
-		op -= op * 0.1;
-	}, 50);
-};
+function updateProgressBar(frameRate, t, log) {
+	const { message } = log;
+	if (message.startsWith('frame=')) {
+		$('#progress-bar-outer').style.width = `${
+			(message.split(/\s+/)[1] / (t * frameRate)) * 100
+		}%`;
+	}
+}
 
 async function downloadBlob(blob) {
 	$('#video-processing').classList.toggle('fade');
 	const resultBlob = await toLibx264(blob);
-	$('#spinner').style.display = 'none';
+	$('#progress-bar-outer').style.width = '100%';
 	$('#processing-text').style.display = 'none';
-	$('#complete-text').style.display = 'inline';
+	$('#complete-text').style.display = 'block';
 	setTimeout(() => {
 		$('#video-processing').classList.toggle('fade');
 		setTimeout(() => {
-			$('#spinner').style.display = '';
 			$('#processing-text').style.display = '';
 			$('#complete-text').style.display = 'none';
+			$('#progress-bar-outer').style.width = '0%';
 		}, 400);
 	}, 2500);
 	const url = URL.createObjectURL(resultBlob);
@@ -175,7 +176,10 @@ async function downloadBlob(blob) {
 			$('#recording').classList.add('btn-red');
 			$('#recording').textContent = 'Stop Recording';
 			recordingState = true;
+			recordingStartTime = new Date();
 		} else {
+			recordingEndTime = new Date();
+			recordedTime = (recordingEndTime - recordingStartTime) / 1000;
 			stream.getTracks().forEach((track) => track.stop());
 			recorder.stopRecording();
 			$('#recording').classList.remove('btn-red');
